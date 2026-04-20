@@ -3,112 +3,43 @@
 <head>
 <meta charset="UTF-8">
 <title>DOM Replacer with Base</title>
-
-<script>
-const server = "http://localhost:8000";
-
-// Grab local file path (only works in file:// context)
-const selfPath = window.location.pathname
-    .replace(/^\//, '')
-    .replace(/\//g, '\\')
-    .replace(/\\[^\\]+$/, '');
-
-const script = document.createElement('script');
-script.src = `${server}/getpath?path=${encodeURIComponent(selfPath)}`;
-
-script.onload = () => {
-    // wait until server sets this
-    if (window.__filePath) {
-        loadPage(window.__filePath);
-    } else {
-        console.error("getpath loaded but __filePath is missing");
-    }
-};
-
-script.onerror = () => {
-    console.error("Failed to load getpath script");
-};
-
-document.head.appendChild(script);
-</script>
-
 </head>
-
 <body>
+<h1></h1>
 <script>
+// URL of the HTML to load
+const htmlUrl = "localhost:8000";
 
-function loadPage(filePath) {
+fetch(htmlUrl)
+    .then(response => {
+        if (!response.ok) throw new Error("Failed to fetch HTML");
+        return response.text();
+    })
+    .then(html => {
+        // Create a temporary DOM to insert a <base> tag
+        const temp = document.createElement('html');
+        temp.innerHTML = html;
 
-    const htmlUrl = `${server}/u-a1b2c3d4e5f6/index.html`;
+        // Add <base> to the <head> so relative URLs resolve correctly
+        let head = temp.querySelector('head');
+        if (!head) {
+            head = document.createElement('head');
+            temp.insertBefore(head, temp.firstChild);
+        }
 
-    fetch(htmlUrl)
-        .then(response => {
-            if (!response.ok) throw new Error("Failed to fetch HTML");
-            return response.text();
-        })
-        .then(html => {
+        const base = document.createElement('base');
+        base.href = htmlUrl;
+        head.insertBefore(base, head.firstChild);
 
-            const parser = new DOMParser();
-            const doc = parser.parseFromString(html, 'text/html');
-
-            // Inject base
-            const base = document.createElement('base');
-            base.href = htmlUrl;
-            doc.head.insertBefore(base, doc.head.firstChild);
-
-            // Inject file path
-            const pathScript = document.createElement('script');
-            pathScript.textContent = `window.__filePath = ${JSON.stringify(filePath)};`;
-            doc.head.insertBefore(pathScript, doc.head.firstChild);
-
-            // Replace head (non-script safe copy)
-            document.head.innerHTML = "";
-            Array.from(doc.head.childNodes).forEach(node => {
-                if (node.nodeName !== 'SCRIPT') {
-                    document.head.appendChild(node.cloneNode(true));
-                }
-            });
-
-            // Replace body
-            document.body.innerHTML = doc.body.innerHTML;
-
-            // Re-run scripts in order
-            function runScripts(source) {
-                return new Promise(resolve => {
-                    const scripts = Array.from(source.querySelectorAll('script'));
-                    let i = 0;
-
-                    function next() {
-                        if (i >= scripts.length) return resolve();
-
-                        const old = scripts[i++];
-                        const s = document.createElement('script');
-
-                        if (old.src) {
-                            s.src = old.src;
-                            s.onload = next;
-                            s.onerror = next;
-                        } else {
-                            s.textContent = old.textContent;
-                            next();
-                        }
-
-                        document.body.appendChild(s);
-                    }
-
-                    next();
-                });
-            }
-
-            runScripts(doc.head).then(() => runScripts(doc.body));
-
-        })
-        .catch(err => {
-            console.error(err);
-            document.body.innerHTML = "<h1>Failed to load external HTML</h1>";
-        });
-}
-
+        // Replace the current page's DOM
+        document.open();
+        document.write(temp.innerHTML);
+        document.close();
+    })
+    .catch(err => {
+        console.error(err);
+        document.body.innerHTML = "<h1>Failed to load external HTML</h1>";
+    });
 </script>
 </body>
 </html>
