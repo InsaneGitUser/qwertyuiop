@@ -1,0 +1,11 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<games>
+
+  <game>
+    <title>Test</title>
+    <desc>Short description of the game.</desc>
+    <img>img/placeholder.png</img>
+    <url>./game-folder</url>
+  </game>
+
+</games>

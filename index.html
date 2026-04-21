@@ -1,0 +1,1373 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <title>App</title>
+  <link rel="icon" href="favicon.png" />
+  <script src="auth.js"></script>
+  <style>
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+    /* THEME VARIABLES */
+    body {
+      --bg:        #0a0a12;
+      --bg2:       #10101e;
+      --bg3:       #181828;
+      --border:    #2a2a44;
+      --text:      #e0e0ff;
+      --text2:     #9090bb;
+      --text3:     #444466;
+      --hover:     #1a1a30;
+      --tab-act:   #202038;
+    }
+    body.light {
+      --bg:        #f0ede0;
+      --bg2:       #faf8f0;
+      --bg3:       #e8e4d0;
+      --border:    #c8c0a0;
+      --text:      #1a1400;
+      --text2:     #5a5030;
+      --text3:     #a09060;
+      --hover:     #e4dfc8;
+      --tab-act:   #dcd6c0;
+    }
+
+    /* ── RETRO ANIMATED BACKGROUND ── */
+    #retro-bg {
+      position: fixed;
+      inset: 0;
+      z-index: 0;
+      pointer-events: none;
+      overflow: hidden;
+    }
+
+    #retro-canvas-dark {
+      position: absolute;
+      inset: 0;
+      width: 100%; height: 100%;
+      display: block;
+    }
+
+    #retro-canvas-light {
+      position: absolute;
+      inset: 0;
+      width: 100%; height: 100%;
+      display: block;
+    }
+
+    body:not(.light) #retro-canvas-light { opacity: 0; }
+    body.light #retro-canvas-dark        { opacity: 0; }
+    body:not(.light) #retro-canvas-dark  { opacity: 1; }
+    body.light #retro-canvas-light       { opacity: 1; }
+
+    /* ── CRT OVERLAY ── */
+    #crt-overlay {
+      position: fixed;
+      inset: 0;
+      z-index: 9999;
+      pointer-events: none;
+    }
+    /* Scanlines */
+    #crt-overlay::before {
+      content: '';
+      position: absolute;
+      inset: 0;
+      background: repeating-linear-gradient(
+        to bottom,
+        transparent 0px,
+        transparent 2px,
+        rgba(0,0,0,0.18) 2px,
+        rgba(0,0,0,0.18) 4px
+      );
+      animation: scanRoll 8s linear infinite;
+    }
+    /* Moving bright scan band */
+    #crt-overlay::after {
+      content: '';
+      position: absolute;
+      left: 0; right: 0;
+      height: 120px;
+      background: linear-gradient(
+        to bottom,
+        transparent 0%,
+        rgba(255,255,255,0.03) 50%,
+        transparent 100%
+      );
+      animation: scanBand 6s linear infinite;
+    }
+    /* Phosphor flicker */
+    .crt-flicker {
+      position: absolute;
+      inset: 0;
+      animation: flicker 0.15s infinite;
+    }
+    @keyframes flicker {
+      0%   { opacity: 1; }
+      92%  { opacity: 1; }
+      93%  { opacity: 0.92; }
+      94%  { opacity: 1; }
+      96%  { opacity: 0.96; }
+      100% { opacity: 1; }
+    }
+    @keyframes scanRoll {
+      0%   { background-position: 0 0; }
+      100% { background-position: 0 100px; }
+    }
+    @keyframes scanBand {
+      0%   { top: -120px; }
+      100% { top: 100%; }
+    }
+
+    /* Light mode: warmer CRT tint */
+    body.light #crt-overlay::before {
+      background: repeating-linear-gradient(
+        to bottom,
+        transparent 0px,
+        transparent 2px,
+        rgba(80,40,0,0.10) 2px,
+        rgba(80,40,0,0.10) 4px
+      );
+    }
+
+    body {
+      font-family: 'Courier New', Courier, monospace;
+      background: transparent;
+      color: var(--text);
+      height: 100vh;
+      display: flex;
+      flex-direction: column;
+      overflow: hidden;
+      transition: color 0.4s;
+      position: relative;
+      z-index: 1;
+    }
+
+    /* Give all panels slight transparency so bg bleeds through */
+    nav,
+    .chat-sidebar, .chat-header, .chat-input-area,
+    .dropdown, .settings-section, .acct-profile-card,
+    .acct-section, .home-btn, .game-card {
+      backdrop-filter: blur(2px) saturate(1.2);
+      background: color-mix(in srgb, var(--bg2) 88%, transparent) !important;
+    }
+    .page-container { background: transparent; }
+
+    /* NAV */
+    nav {
+      height: 56px;
+      background: var(--bg2);
+      border-bottom: 1px solid var(--border);
+      display: flex;
+      align-items: center;
+      padding: 0 20px;
+      gap: 4px;
+      flex-shrink: 0;
+    }
+
+    .nav-tabs { display: flex; gap: 4px; flex: 1; }
+
+    .nav-tab {
+      padding: 7px 16px;
+      border-radius: 8px;
+      font-size: 14px;
+      font-weight: 500;
+      color: var(--text3);
+      cursor: pointer;
+      border: none;
+      background: transparent;
+      transition: background 0.15s, color 0.15s;
+    }
+    .nav-tab:hover  { background: var(--hover); color: var(--text2); }
+    .nav-tab.active { background: var(--tab-act); color: var(--text); }
+
+    .nav-account {
+      position: relative;
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      cursor: pointer;
+      padding: 6px 10px;
+      border-radius: 10px;
+      transition: background 0.15s;
+      user-select: none;
+    }
+    .nav-account:hover { background: var(--hover); }
+    .nav-account .username { font-size: 14px; font-weight: 500; color: var(--text2); }
+
+    .nav-pfp {
+      width: 32px; height: 32px;
+      border-radius: 50%;
+      object-fit: cover;
+      border: 2px solid var(--border);
+    }
+
+    /* DROPDOWN */
+    .dropdown {
+      display: none;
+      position: absolute;
+      top: calc(100% + 8px);
+      right: 0;
+      background: var(--bg3);
+      border: 1px solid var(--border);
+      border-radius: 12px;
+      min-width: 200px;
+      overflow: hidden;
+      z-index: 999999999;
+    }
+    .dropdown.open { display: block; }
+
+    .dropdown-header {
+      padding: 14px 16px 10px;
+      border-bottom: 1px solid var(--border);
+      display: flex;
+      align-items: center;
+      gap: 10px;
+    }
+    .dropdown-header img {
+      width: 36px; height: 36px;
+      border-radius: 50%;
+      object-fit: cover;
+      border: 2px solid var(--border);
+    }
+    .dropdown-header .info .name { font-size: 14px; font-weight: 600; color: var(--text); }
+    .dropdown-header .info .hash { font-size: 11px; color: var(--text3); font-family: monospace; }
+
+    .dropdown-item {
+      padding: 10px 16px;
+      font-size: 13px;
+      color: var(--text2);
+      cursor: pointer;
+      transition: background 0.1s, color 0.1s;
+      display: flex;
+      align-items: center;
+      gap: 10px;
+    }
+    .dropdown-item:hover { background: var(--hover); color: var(--text); }
+
+    /* PAGES */
+    .page-container { flex: 1; overflow-y: auto; padding: 32px; min-height: 0; background: transparent; }
+    .page { display: none; }
+    .page.active { display: block; }
+    .page.active.chat-page { display: flex; }
+
+    /* CHAT */
+    #page-chat {
+      height: 100%;
+      overflow: hidden;
+    }
+    .chat-layout {
+      display: flex;
+      height: 100%;
+	  width: 100%;
+      background: transparent;
+    }
+
+    .chat-sidebar {
+      width: 280px;
+      flex-shrink: 0;
+      background: var(--bg2);
+      border-right: 1px solid var(--border);
+      display: flex;
+      flex-direction: column;
+      overflow: hidden;
+    }
+
+    .chat-sidebar-header {
+      padding: 18px 16px 12px;
+      font-size: 16px;
+      font-weight: 700;
+      color: var(--text);
+      border-bottom: 1px solid var(--border);
+      flex-shrink: 0;
+    }
+
+    .chat-user-list {
+      flex: 1;
+      overflow-y: auto;
+    }
+
+    .chat-user-item {
+      display: flex;
+      align-items: center;
+      gap: 12px;
+      padding: 12px 16px;
+      cursor: pointer;
+      border-bottom: 1px solid var(--border);
+      transition: background 0.15s;
+    }
+    .chat-user-item:hover { background: var(--hover); }
+    .chat-user-item.active { background: var(--tab-act); }
+
+    .chat-user-item img {
+      width: 42px; height: 42px;
+      border-radius: 50%;
+      object-fit: cover;
+      border: 2px solid var(--border);
+      flex-shrink: 0;
+    }
+
+    .chat-user-info { flex: 1; min-width: 0; }
+    .chat-user-name {
+      font-size: 14px;
+      font-weight: 600;
+      color: var(--text);
+      margin-bottom: 2px;
+      white-space: nowrap;
+      overflow: hidden;
+      text-overflow: ellipsis;
+    }
+    .chat-user-preview {
+      font-size: 12px;
+      color: var(--text3);
+      white-space: nowrap;
+      overflow: hidden;
+      text-overflow: ellipsis;
+    }
+
+    /* CHAT MAIN */
+    .chat-main {
+      flex: 1;
+      display: flex;
+      flex-direction: column;
+      overflow: hidden;
+    }
+
+    .chat-header {
+      display: flex;
+      align-items: center;
+      gap: 12px;
+      padding: 14px 20px;
+      background: var(--bg2);
+      border-bottom: 1px solid var(--border);
+      flex-shrink: 0;
+    }
+    .chat-header img {
+      width: 36px; height: 36px;
+      border-radius: 50%;
+      object-fit: cover;
+      border: 2px solid var(--border);
+    }
+    .chat-header .chat-header-name {
+      font-size: 15px;
+      font-weight: 600;
+      color: var(--text);
+    }
+
+    .chat-empty {
+      flex: 1;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      color: var(--text3);
+      font-size: 14px;
+    }
+
+    .chat-messages {
+      flex: 1;
+      overflow-y: auto;
+      padding: 20px;
+      display: flex;
+      flex-direction: column;
+      gap: 12px;
+      background: color-mix(in srgb, var(--bg) 75%, transparent);
+    }
+
+    .chat-msg {
+      display: flex;
+      gap: 10px;
+      align-items: flex-end;
+      max-width: 70%;
+    }
+    .chat-msg.me {
+      align-self: flex-end;
+      flex-direction: row-reverse;
+    }
+    .chat-msg img {
+      width: 28px; height: 28px;
+      border-radius: 50%;
+      object-fit: cover;
+      flex-shrink: 0;
+    }
+    .chat-msg .bubble {
+      background: var(--bg3);
+      border: 1px solid var(--border);
+      border-radius: 16px;
+      padding: 9px 14px;
+      font-size: 14px;
+      color: var(--text);
+      line-height: 1.5;
+    }
+    .chat-msg.me .bubble {
+      background: #f5c400;
+      border-color: #f5c400;
+      color: #111;
+    }
+    .chat-msg .msg-time {
+      font-size: 10px;
+      color: var(--text3);
+      margin-bottom: 4px;
+      white-space: nowrap;
+    }
+    .chat-msg.me .msg-time { text-align: right; }
+
+    .chat-input-area {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      padding: 14px 20px;
+      border-top: 1px solid var(--border);
+      background: var(--bg2);
+      flex-shrink: 0;
+    }
+    .chat-input {
+      flex: 1;
+      background: var(--bg3);
+      border: 1px solid var(--border);
+      border-radius: 999px;
+      padding: 10px 16px;
+      font-size: 14px;
+      color: var(--text);
+      outline: none;
+      transition: border-color 0.15s;
+    }
+    .chat-input:focus { border-color: #f5c400; }
+    .chat-input::placeholder { color: var(--text3); }
+    .chat-send-btn {
+      width: 38px; height: 38px;
+      border-radius: 50%;
+      background: #f5c400;
+      border: none;
+      cursor: pointer;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      flex-shrink: 0;
+      transition: opacity 0.15s;
+    }
+    .chat-send-btn:hover { opacity: 0.85; }
+    .chat-send-btn svg { width: 16px; height: 16px; fill: #111; }
+    .page-title { font-size: 26px; font-weight: 700; margin-bottom: 8px; }
+    .page-sub { font-size: 14px; color: var(--text3); }
+
+    .placeholder-box {
+      margin-top: 32px;
+      border: 1px dashed var(--border);
+      border-radius: 12px;
+      padding: 60px 32px;
+      text-align: center;
+      color: var(--text3);
+      font-size: 14px;
+    }
+
+    /* SETTINGS */
+    .settings-centered { max-width: 600px; margin: 0 auto; }
+
+    .settings-section {
+      margin-top: 28px;
+      background: var(--bg2);
+      border: 1px solid var(--border);
+      border-radius: 14px;
+      overflow: hidden;
+    }
+    .settings-section-title {
+      font-size: 11px;
+      font-weight: 600;
+      text-transform: uppercase;
+      letter-spacing: 0.08em;
+      color: var(--text3);
+      padding: 14px 20px 10px;
+      border-bottom: 1px solid var(--border);
+    }
+    .settings-row {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      padding: 14px 20px;
+      border-bottom: 1px solid var(--border);
+      font-size: 14px;
+    }
+    .settings-row:last-child { border-bottom: none; }
+    .settings-row .row-label { color: var(--text2); }
+    .settings-row .row-sub { font-size: 12px; color: var(--text3); margin-top: 2px; }
+
+    /* TOGGLE SWITCH */
+    .toggle {
+      position: relative;
+      width: 44px;
+      height: 24px;
+      flex-shrink: 0;
+    }
+    .toggle input { opacity: 0; width: 0; height: 0; }
+    .toggle-track {
+      position: absolute;
+      inset: 0;
+      background: var(--border);
+      border-radius: 999px;
+      cursor: pointer;
+      transition: background 0.2s;
+    }
+    .toggle input:checked + .toggle-track { background: #f5c400; }
+    .toggle-track::after {
+      content: '';
+      position: absolute;
+      width: 18px; height: 18px;
+      border-radius: 50%;
+      background: #fff;
+      top: 3px; left: 3px;
+      transition: transform 0.2s;
+    }
+    .toggle input:checked + .toggle-track::after { transform: translateX(20px); }
+
+    /* ACCOUNT SETTINGS */
+    .acct-centered { max-width: 600px; margin: 0 auto; }
+
+    .acct-profile-card {
+      background: var(--bg2);
+      border: 1px solid var(--border);
+      border-radius: 14px;
+      padding: 24px;
+      display: flex;
+      align-items: center;
+      gap: 20px;
+      margin-top: 28px;
+      margin-bottom: 24px;
+    }
+    .acct-profile-card img {
+      width: 72px; height: 72px;
+      border-radius: 50%;
+      object-fit: cover;
+      border: 2px solid var(--border);
+      flex-shrink: 0;
+    }
+    .acct-profile-card .name { font-size: 20px; font-weight: 700; margin-bottom: 6px; }
+    .acct-profile-card .hash-value {
+      font-family: monospace;
+      font-size: 12px;
+      color: var(--text3);
+      background: var(--bg3);
+      border: 1px solid var(--border);
+      border-radius: 6px;
+      padding: 4px 10px;
+      display: inline-block;
+    }
+
+    .acct-section {
+      background: var(--bg2);
+      border: 1px solid var(--border);
+      border-radius: 14px;
+      overflow: hidden;
+      margin-bottom: 20px;
+    }
+    .acct-section-title {
+      font-size: 11px;
+      font-weight: 600;
+      text-transform: uppercase;
+      letter-spacing: 0.08em;
+      color: var(--text3);
+      padding: 14px 20px 10px;
+      border-bottom: 1px solid var(--border);
+    }
+    .acct-row {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      padding: 13px 20px;
+      border-bottom: 1px solid var(--border);
+      font-size: 14px;
+    }
+    .acct-row:last-child { border-bottom: none; }
+    .acct-row .label { color: var(--text2); }
+    .acct-row .value { color: var(--text); font-weight: 500; }
+    .acct-row .value.mono { font-family: monospace; font-size: 12px; color: var(--text3); }
+
+    .copy-btn {
+      background: transparent;
+      border: 1px solid var(--border);
+      color: var(--text3);
+      font-size: 12px;
+      padding: 4px 10px;
+      border-radius: 6px;
+      cursor: pointer;
+      margin-left: 10px;
+      transition: background 0.15s, color 0.15s;
+    }
+    .copy-btn:hover { background: var(--hover); color: var(--text2); }
+
+    /* HOME BUTTONS */
+    .home-btn {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      width: 100%;
+      padding: 18px 22px;
+      background: var(--bg2);
+      border: 1px solid var(--border);
+      border-radius: 12px;
+      color: var(--text);
+      font-size: 16px;
+      font-weight: 600;
+      cursor: pointer;
+      transition: border-color 0.15s, transform 0.15s, background 0.15s;
+      text-align: left;
+    }
+    .home-btn:hover {
+      border-color: #f5c400;
+      background: var(--hover);
+      transform: translateX(4px);
+    }
+    .home-btn .home-btn-arrow {
+      color: var(--text3);
+      font-size: 18px;
+      transition: color 0.15s;
+    }
+    .home-btn:hover .home-btn-arrow { color: #f5c400; }
+
+    /* GAMES GRID */
+    .games-grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fill, minmax(220px, 1fr));
+      gap: 16px;
+      margin-top: 28px;
+    }
+
+    .game-card-link { text-decoration: none; color: inherit; display: block; }
+
+    .game-card {
+      background: var(--bg2);
+      border: 1px solid var(--border);
+      border-radius: 14px;
+      overflow: hidden;
+      cursor: pointer;
+      transition: border-color 0.2s, transform 0.15s;
+      height: 100%;
+    }
+    .game-card:hover { border-color: #f5c400; transform: translateY(-3px); }
+
+    .game-card .thumb {
+      width: 100%;
+      aspect-ratio: 16/9;
+      background: var(--bg3);
+      overflow: hidden;
+      border-bottom: 1px solid var(--border);
+    }
+    .game-card .thumb img { width: 100%; height: 100%; object-fit: cover; display: block; }
+
+    .game-card .info { padding: 12px 14px; }
+    .game-card .info .title { font-size: 14px; font-weight: 600; color: var(--text); margin-bottom: 4px; }
+    .game-card .info .desc  { font-size: 12px; color: var(--text3); line-height: 1.5; }
+    /* MUSIC PLAYER */
+    .music-preset {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      padding: 10px 14px;
+      border: 1px solid var(--border);
+      border-radius: 10px;
+      cursor: pointer;
+      transition: border-color 0.15s, background 0.15s;
+    }
+    .music-preset:hover { background: var(--hover); }
+    .music-preset input[type="radio"] { accent-color: #f5c400; width: 16px; height: 16px; cursor: pointer; }
+    .music-preset input[type="radio"]:checked + .music-preset-label { color: #f5c400; }
+    .music-preset-label { font-size: 14px; color: var(--text2); transition: color 0.15s; }
+
+    .music-ok-btn {
+      padding: 8px 24px;
+      background: #f5c400;
+      border: none;
+      border-radius: 8px;
+      font-size: 14px;
+      font-weight: 600;
+      color: #111;
+      cursor: pointer;
+      transition: opacity 0.15s;
+    }
+    .music-ok-btn:hover { opacity: 0.85; }
+  </style>
+</head>
+<body>
+
+  <!-- RETRO ANIMATED BACKGROUND -->
+  <div id="retro-bg">
+    <canvas id="retro-canvas-dark"></canvas>
+    <canvas id="retro-canvas-light"></canvas>
+  </div>
+
+  <!-- CRT OVERLAY -->
+  <div id="crt-overlay">
+    <div class="crt-flicker"></div>
+  </div>
+
+  <nav>
+    <div class="nav-tabs">
+      <img src="logo.png" alt="logo" style="height:32px;width:auto;margin-right:8px;object-fit:contain;" />
+      <button class="nav-tab active" data-page="home">Home</button>
+      <button class="nav-tab" data-page="chat">Chat</button>
+      <button class="nav-tab" data-page="games">Games</button>
+      <button class="nav-tab" data-page="settings">Settings</button>
+    </div>
+
+    <div class="nav-account" id="account-btn">
+      <span class="username" id="nav-username">...</span>
+      <img class="nav-pfp" id="nav-pfp" src="" alt="pfp" />
+      <div class="dropdown" id="dropdown">
+        <div class="dropdown-header">
+          <img id="drop-pfp" src="" alt="pfp" />
+          <div class="info">
+            <div class="name" id="drop-username"></div>
+            <div class="hash" id="drop-hash"></div>
+          </div>
+        </div>
+        <div class="dropdown-item" onclick="switchPage('account')">⚙ Account settings</div>
+      </div>
+    </div>
+  </nav>
+
+  <div id="main-container" style="flex:1;display:flex;flex-direction:column;min-height:0;">
+
+    <!-- CHAT (full height, outside normal padding) -->
+    <div class="page chat-page" id="page-chat" style="flex:1;min-height:0;">
+      <div class="chat-layout">
+
+        <div class="chat-sidebar">
+          <div class="chat-sidebar-header">Messages</div>
+          <div class="chat-user-list" id="chat-user-list">
+            <!-- populated from users.xml -->
+          </div>
+        </div>
+
+        <div class="chat-main" id="chat-main">
+          <div class="chat-empty" id="chat-empty">Select a conversation</div>
+
+          <div id="chat-convo" style="display:none;flex:1;flex-direction:column;overflow:hidden;">
+            <div class="chat-header" id="chat-header">
+              <img id="chat-header-pfp" src="" alt="" />
+              <span class="chat-header-name" id="chat-header-name"></span>
+            </div>
+            <div class="chat-messages" id="chat-messages">
+              <!-- placeholder messages for styling -->
+              <div class="chat-msg">
+                <img id="chat-their-pfp" src="" alt="" />
+                <div>
+                  <div class="msg-time">12:01 PM</div>
+                  <div class="bubble">Hey! What's up?</div>
+                </div>
+              </div>
+              <div class="chat-msg me">
+                <img id="chat-my-pfp" src="" alt="" />
+                <div>
+                  <div class="msg-time">12:02 PM</div>
+                  <div class="bubble">Not much, just testing this chat!</div>
+                </div>
+              </div>
+              <div class="chat-msg">
+                <img id="chat-their-pfp2" src="" alt="" />
+                <div>
+                  <div class="msg-time">12:03 PM</div>
+                  <div class="bubble">Looks pretty clean ngl</div>
+                </div>
+              </div>
+            </div>
+            <div class="chat-input-area">
+              <input class="chat-input" type="text" placeholder="Message..." />
+              <button class="chat-send-btn">
+                <svg viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg">
+                  <path d="M2 21l21-9L2 3v7l15 2-15 2z"/>
+                </svg>
+              </button>
+            </div>
+          </div>
+        </div>
+
+      </div>
+    </div>
+
+    <div class="page-container" id="page-container">
+
+      <!-- HOME -->
+      <div class="page active" id="page-home">
+      <div class="page-title">Home</div>
+      <div class="page-sub">Where do you want to go?</div>
+      <div style="display:flex;flex-direction:column;gap:12px;margin-top:32px;max-width:400px;">
+
+        <button class="home-btn" onclick="switchPage('chat')">
+          <span class="home-btn-label">Chat</span>
+          <span class="home-btn-arrow">→</span>
+        </button>
+
+        <button class="home-btn" onclick="switchPage('games')">
+          <span class="home-btn-label">Games</span>
+          <span class="home-btn-arrow">→</span>
+        </button>
+
+        <button class="home-btn" onclick="switchPage('settings')">
+          <span class="home-btn-label">Settings</span>
+          <span class="home-btn-arrow">→</span>
+        </button>
+
+      </div>
+    </div>
+
+
+    <!-- GAMES -->
+    <div class="page" id="page-games">
+      <div class="page-title">Games</div>
+      <div class="page-sub">Pick something to play</div>
+      <div class="games-grid" id="games-grid"></div>
+    </div>
+
+    <!-- SETTINGS -->
+    <div class="page" id="page-settings">
+      <div class="settings-centered">
+        <div class="page-title">Settings</div>
+        <div class="page-sub">App preferences</div>
+
+        <div class="settings-section">
+          <div class="settings-section-title">Appearance</div>
+          <div class="settings-row">
+            <div>
+              <div class="row-label">Light mode</div>
+              <div class="row-sub">Switch between dark and light theme</div>
+            </div>
+            <label class="toggle">
+              <input type="checkbox" id="theme-toggle" onchange="toggleTheme(this)" />
+              <span class="toggle-track"></span>
+            </label>
+          </div>
+        </div>
+
+        <!-- ADD MORE SETTINGS SECTIONS HERE -->
+
+        <div class="settings-section">
+          <div class="settings-section-title">Background Music</div>
+          <div class="settings-row" style="flex-direction: column; align-items: flex-start; gap: 14px;">
+            <div class="row-label">Select a track</div>
+            <div style="display:flex; flex-direction:column; gap:8px; width:100%;">
+              <label class="music-preset">
+                <input type="radio" name="music-preset" value="none" />
+                <span class="music-preset-label">No song</span>
+              </label>
+              <label class="music-preset">
+                <input type="radio" name="music-preset" value="./1.mp3" />
+                <span class="music-preset-label">Unity</span>
+              </label>
+              <label class="music-preset">
+                <input type="radio" name="music-preset" value="./2.mp3" />
+                <span class="music-preset-label">A Cyber's World</span>
+              </label>
+            </div>
+            <button class="music-ok-btn" onclick="applyMusicPreset()">OK</button>
+          </div>
+        </div>
+
+      </div>
+    </div>
+
+    <!-- ACCOUNT SETTINGS -->
+    <div class="page" id="page-account">
+      <div class="acct-centered">
+        <div class="page-title">Account settings</div>
+        <div class="page-sub">Your profile and device info</div>
+
+        <div class="acct-profile-card">
+          <img id="acct-pfp" src="" alt="pfp" />
+          <div>
+            <div class="name" id="acct-name">...</div>
+            <span class="hash-value" id="acct-hash">...</span>
+          </div>
+        </div>
+
+        <div class="acct-section">
+          <div class="acct-section-title">Profile</div>
+          <div class="acct-row">
+            <span class="label">Username</span>
+            <span class="value" id="acct-row-username">...</span>
+          </div>
+        </div>
+
+        <div class="acct-section">
+          <div class="acct-section-title">Device</div>
+          <div class="acct-row">
+            <span class="label">User hash</span>
+            <span style="display:flex;align-items:center;">
+              <span class="value mono" id="acct-row-hash">...</span>
+              <button class="copy-btn" id="copy-btn" onclick="copyHash()">Copy</button>
+            </span>
+          </div>
+          <div class="acct-row">
+            <span class="label">Full file URL</span>
+            <span class="value mono" id="acct-row-url" style="max-width:320px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">...</span>
+          </div>
+        </div>
+      </div>
+    </div><!-- end page-account -->
+
+    </div><!-- end page-container -->
+  </div><!-- end main-container -->
+
+  <script>
+    // =====================
+    // RETRO BACKGROUND ENGINE
+    // =====================
+
+    // ── DARK: Synthwave grid + stars + shooting stars ──
+    (function() {
+      const canvas = document.getElementById('retro-canvas-dark');
+      const ctx = canvas.getContext('2d');
+      let W, H, stars, shooters, t = 0;
+
+      function resize() {
+        W = canvas.width  = window.innerWidth;
+        H = canvas.height = window.innerHeight;
+        buildStars();
+      }
+
+      function buildStars() {
+        stars = Array.from({length: 200}, () => ({
+          x: Math.random() * W,
+          y: Math.random() * H * 0.6,
+          r: Math.random() * 1.4 + 0.2,
+          blink: Math.random() * Math.PI * 2,
+          speed: Math.random() * 0.02 + 0.005
+        }));
+        shooters = Array.from({length: 3}, () => makeShooter());
+      }
+
+      function makeShooter() {
+        return {
+          x: Math.random() * W,
+          y: Math.random() * H * 0.3,
+          len: Math.random() * 120 + 60,
+          speed: Math.random() * 8 + 6,
+          angle: Math.PI / 5,
+          life: 0,
+          maxLife: Math.random() * 60 + 40,
+          delay: Math.random() * 300
+        };
+      }
+
+      function drawDark() {
+        t++;
+        ctx.clearRect(0, 0, W, H);
+
+        // Deep space gradient sky
+        const sky = ctx.createLinearGradient(0, 0, 0, H * 0.7);
+        sky.addColorStop(0,   '#0d0020');
+        sky.addColorStop(0.5, '#0e0030');
+        sky.addColorStop(1,   '#1a0030');
+        ctx.fillStyle = sky;
+        ctx.fillRect(0, 0, W, H);
+
+        // Stars
+        stars.forEach(s => {
+          s.blink += s.speed;
+          const alpha = 0.4 + 0.6 * Math.abs(Math.sin(s.blink));
+          ctx.beginPath();
+          ctx.arc(s.x, s.y, s.r, 0, Math.PI * 2);
+          ctx.fillStyle = `rgba(200,200,255,${alpha})`;
+          ctx.fill();
+        });
+
+        // Shooting stars
+        shooters.forEach(s => {
+          if (s.delay > 0) { s.delay--; return; }
+          s.life++;
+          if (s.life > s.maxLife) {
+            Object.assign(s, makeShooter());
+            return;
+          }
+          const prog = s.life / s.maxLife;
+          const alpha = prog < 0.2 ? prog/0.2 : prog > 0.8 ? (1-prog)/0.2 : 1;
+          const ex = s.x + Math.cos(s.angle) * s.speed * s.life;
+          const ey = s.y + Math.sin(s.angle) * s.speed * s.life;
+          const sx = ex - Math.cos(s.angle) * s.len;
+          const sy = ey - Math.sin(s.angle) * s.len;
+          const grad = ctx.createLinearGradient(sx, sy, ex, ey);
+          grad.addColorStop(0, `rgba(255,255,255,0)`);
+          grad.addColorStop(1, `rgba(255,200,255,${alpha})`);
+          ctx.beginPath();
+          ctx.moveTo(sx, sy);
+          ctx.lineTo(ex, ey);
+          ctx.strokeStyle = grad;
+          ctx.lineWidth = 1.5;
+          ctx.stroke();
+        });
+
+        // Sun/Moon glow on horizon
+        const glow = ctx.createRadialGradient(W * 0.5, H * 0.62, 0, W * 0.5, H * 0.62, 200);
+        glow.addColorStop(0,   'rgba(255,50,180,0.35)');
+        glow.addColorStop(0.4, 'rgba(180,0,255,0.15)');
+        glow.addColorStop(1,   'transparent');
+        ctx.fillStyle = glow;
+        ctx.fillRect(0, 0, W, H);
+
+        // Retro sun (half circle)
+        const sunY = H * 0.62;
+        const sunR = 80;
+        const sunGrad = ctx.createLinearGradient(W/2 - sunR, sunY - sunR, W/2 + sunR, sunY);
+        sunGrad.addColorStop(0,   '#ff2090');
+        sunGrad.addColorStop(0.5, '#ff6030');
+        sunGrad.addColorStop(1,   '#ffdd00');
+        ctx.save();
+        ctx.beginPath();
+        ctx.arc(W/2, sunY, sunR, Math.PI, 0);
+        ctx.closePath();
+        ctx.fillStyle = sunGrad;
+        ctx.fill();
+        ctx.save();
+        ctx.clip();
+        for (let i = 0; i < sunR * 2; i += 8) {
+          ctx.fillStyle = 'rgba(0,0,0,0.25)';
+          ctx.fillRect(W/2 - sunR, sunY - sunR + i + 4, sunR * 2, 4);
+        }
+        ctx.restore();
+        ctx.restore();
+
+        // Perspective grid floor
+        const horizon = H * 0.62;
+        const floorH  = H - horizon;
+        const vp = { x: W / 2, y: horizon };
+        const gridCols = 20;
+        for (let i = 0; i <= gridCols; i++) {
+          const bx = (i / gridCols) * W;
+          const pulse = 0.4 + 0.6 * Math.abs(Math.sin(t * 0.02 + i * 0.3));
+          ctx.beginPath();
+          ctx.moveTo(vp.x, horizon);
+          ctx.lineTo(bx, H);
+          ctx.strokeStyle = `rgba(255,0,200,${0.15 * pulse})`;
+          ctx.lineWidth = 1;
+          ctx.stroke();
+        }
+
+        const gridRows = 14;
+        for (let i = 0; i <= gridRows; i++) {
+          const scrollFrac = ((i / gridRows) + t * 0.004) % 1;
+          const persp = Math.pow(scrollFrac, 2.2);
+          const y = horizon + persp * floorH;
+          const alpha = 0.1 + 0.5 * scrollFrac;
+          ctx.beginPath();
+          ctx.moveTo(0, y);
+          ctx.lineTo(W, y);
+          ctx.strokeStyle = `rgba(180,0,255,${alpha})`;
+          ctx.lineWidth = 0.8;
+          ctx.stroke();
+        }
+
+        // Mist at horizon
+        const mist = ctx.createLinearGradient(0, horizon - 20, 0, horizon + 60);
+        mist.addColorStop(0, 'transparent');
+        mist.addColorStop(0.4, 'rgba(60,0,80,0.5)');
+        mist.addColorStop(1, 'transparent');
+        ctx.fillStyle = mist;
+        ctx.fillRect(0, horizon - 20, W, 80);
+
+        requestAnimationFrame(drawDark);
+      }
+
+      window.addEventListener('resize', resize);
+      resize();
+      drawDark();
+    })();
+
+    // ── LIGHT: Warm retro paper + floating bubbles ──
+    (function() {
+      const canvas = document.getElementById('retro-canvas-light');
+      const ctx = canvas.getContext('2d');
+      let W, H, bubbles, t = 0;
+
+      function resize() {
+        W = canvas.width  = window.innerWidth;
+        H = canvas.height = window.innerHeight;
+        buildBubbles();
+      }
+
+      function buildBubbles() {
+        bubbles = Array.from({length: 35}, () => ({
+          x:     Math.random() * W,
+          y:     Math.random() * H,
+          r:     Math.random() * 40 + 8,
+          vx:    (Math.random() - 0.5) * 0.4,
+          vy:    -(Math.random() * 0.5 + 0.1),
+          hue:   Math.floor(Math.random() * 4) * 30 + 20,
+          alpha: Math.random() * 0.18 + 0.04,
+          phase: Math.random() * Math.PI * 2
+        }));
+      }
+
+      function drawLight() {
+        t++;
+        ctx.clearRect(0, 0, W, H);
+
+        const bg = ctx.createLinearGradient(0, 0, W, H);
+        bg.addColorStop(0,   '#f5ead0');
+        bg.addColorStop(0.3, '#ede0c0');
+        bg.addColorStop(0.7, '#e8d8a8');
+        bg.addColorStop(1,   '#dcc890');
+        ctx.fillStyle = bg;
+        ctx.fillRect(0, 0, W, H);
+
+        // Paper grain
+        ctx.save();
+        ctx.globalAlpha = 0.07;
+        for (let x = 0; x < W; x += 6) {
+          for (let y = 0; y < H; y += 6) {
+            if ((x + y) % 12 === 0) {
+              ctx.fillStyle = '#80601a';
+              ctx.fillRect(x, y, 1, 1);
+            }
+          }
+        }
+        ctx.restore();
+
+        // Horizontal scanlines
+        for (let y = 0; y < H; y += 4) {
+          ctx.fillStyle = 'rgba(80,40,0,0.04)';
+          ctx.fillRect(0, y, W, 2);
+        }
+
+        // Floating bubbles
+        bubbles.forEach(b => {
+          b.x += b.vx + Math.sin(t * 0.01 + b.phase) * 0.3;
+          b.y += b.vy;
+          if (b.y + b.r < 0)  { b.y = H + b.r; b.x = Math.random() * W; }
+          if (b.x < -b.r)     b.x = W + b.r;
+          if (b.x > W + b.r)  b.x = -b.r;
+
+          const pulse = 0.8 + 0.2 * Math.sin(t * 0.03 + b.phase);
+          const gr = ctx.createRadialGradient(b.x, b.y, 0, b.x, b.y, b.r * pulse);
+          gr.addColorStop(0,   `hsla(${b.hue},80%,70%,${b.alpha * 1.5})`);
+          gr.addColorStop(0.6, `hsla(${b.hue},70%,55%,${b.alpha})`);
+          gr.addColorStop(1,   `hsla(${b.hue},60%,40%,0)`);
+          ctx.beginPath();
+          ctx.arc(b.x, b.y, b.r * pulse, 0, Math.PI * 2);
+          ctx.fillStyle = gr;
+          ctx.fill();
+        });
+
+        // Graph paper grid
+        ctx.save();
+        ctx.globalAlpha = 0.12;
+        ctx.strokeStyle = '#8B6914';
+        ctx.lineWidth = 0.5;
+        const gridSize = 40;
+        for (let x = 0; x < W; x += gridSize) {
+          ctx.beginPath(); ctx.moveTo(x, 0); ctx.lineTo(x, H); ctx.stroke();
+        }
+        for (let y = 0; y < H; y += gridSize) {
+          ctx.beginPath(); ctx.moveTo(0, y); ctx.lineTo(W, y); ctx.stroke();
+        }
+        ctx.restore();
+
+        requestAnimationFrame(drawLight);
+      }
+
+      window.addEventListener('resize', resize);
+      resize();
+      drawLight();
+    })();
+  </script>
+
+  <script>
+    // =====================
+    // CONFIG — edit this
+    // =====================
+    const ROOT_URL = './';
+    // =====================
+
+    const navTabs = document.querySelectorAll('.nav-tab');
+
+    function switchPage(name) {
+      // hide all pages in page-container
+      document.querySelectorAll('#page-container .page').forEach(p => p.classList.remove('active'));
+      // hide/show chat
+      const chatPage = document.getElementById('page-chat');
+      const pageContainer = document.getElementById('page-container');
+      if (name === 'chat') {
+        chatPage.classList.add('active');
+        pageContainer.style.display = 'none';
+      } else {
+        chatPage.classList.remove('active');
+        pageContainer.style.display = '';
+        const pg = document.getElementById('page-' + name);
+        if (pg) pg.classList.add('active');
+      }
+      navTabs.forEach(t => t.classList.remove('active'));
+      const match = document.querySelector(`.nav-tab[data-page="${name}"]`);
+      if (match) match.classList.add('active');
+      closeDropdown();
+    }
+
+    navTabs.forEach(tab => tab.addEventListener('click', () => switchPage(tab.dataset.page)));
+
+    const accountBtn = document.getElementById('account-btn');
+    const dropdown   = document.getElementById('dropdown');
+
+    accountBtn.addEventListener('click', e => {
+      e.stopPropagation();
+      dropdown.classList.toggle('open');
+    });
+
+    function closeDropdown() { dropdown.classList.remove('open'); }
+    document.addEventListener('click', closeDropdown);
+    dropdown.addEventListener('click', e => e.stopPropagation());
+
+    // THEME
+    function toggleTheme(el) {
+      document.body.classList.toggle('light', el.checked);
+      localStorage.setItem('theme', el.checked ? 'light' : 'dark');
+    }
+
+    const savedTheme = localStorage.getItem('theme');
+    if (savedTheme === 'light') {
+      document.body.classList.add('light');
+      document.getElementById('theme-toggle').checked = true;
+    }
+
+    // LOAD GAMES
+    fetch(ROOT_URL + 'games.xml')
+      .then(r => r.text())
+      .then(xml => {
+        const doc  = new DOMParser().parseFromString(xml, 'text/xml');
+        const grid = document.getElementById('games-grid');
+
+        doc.querySelectorAll('game').forEach(g => {
+          const title = g.querySelector('title').textContent.trim();
+          const desc  = g.querySelector('desc').textContent.trim();
+          const img   = ROOT_URL + g.querySelector('img').textContent.trim();
+          const url   = g.querySelector('url').textContent.trim();
+
+          const card = document.createElement('a');
+          card.href      = url;
+          card.className = 'game-card-link';
+          card.innerHTML = `
+            <div class="game-card">
+              <div class="thumb"><img src="${img}" alt="${title}" /></div>
+              <div class="info">
+                <div class="title">${title}</div>
+                <div class="desc">${desc}</div>
+              </div>
+            </div>
+          `;
+          grid.appendChild(card);
+        });
+      });
+
+    // LOAD USER + CHAT SIDEBAR
+    let myPfp = '';
+    fetch(ROOT_URL + 'users.xml')
+      .then(r => r.text())
+      .then(xml => {
+        const doc   = new DOMParser().parseFromString(xml, 'text/xml');
+        const users = doc.querySelectorAll('user');
+        let me = null;
+
+        users.forEach(u => {
+          if (u.querySelector('hash').textContent.trim() === USER_HASH) {
+            me = {
+              username: u.querySelector('username').textContent.trim(),
+              pfp:      ROOT_URL + u.querySelector('pfp').textContent.trim()
+            };
+          }
+        });
+
+        if (!me) return;
+        myPfp = me.pfp;
+
+        document.getElementById('nav-username').textContent  = me.username;
+        document.getElementById('nav-pfp').src               = me.pfp;
+        document.getElementById('drop-pfp').src              = me.pfp;
+        document.getElementById('drop-username').textContent = me.username;
+        document.getElementById('drop-hash').textContent     = USER_HASH;
+
+        document.getElementById('acct-pfp').src                  = me.pfp;
+        document.getElementById('acct-name').textContent         = me.username;
+        document.getElementById('acct-hash').textContent         = USER_HASH;
+        document.getElementById('acct-row-username').textContent = me.username;
+        document.getElementById('acct-row-hash').textContent     = USER_HASH;
+        document.getElementById('acct-row-url').textContent      = FULL_PATH;
+
+        // set my pfp on sent messages
+        document.getElementById('chat-my-pfp').src = me.pfp;
+
+        // BUILD CHAT SIDEBAR — everyone except me
+        const list = document.getElementById('chat-user-list');
+        users.forEach(u => {
+          const hash = u.querySelector('hash').textContent.trim();
+          if (hash === USER_HASH) return;
+
+          const username = u.querySelector('username').textContent.trim();
+          const pfp      = ROOT_URL + u.querySelector('pfp').textContent.trim();
+
+          const item = document.createElement('div');
+          item.className = 'chat-user-item';
+          item.dataset.username = username;
+          item.dataset.pfp      = pfp;
+          item.innerHTML = `
+            <img src="${pfp}" alt="${username}" />
+            <div class="chat-user-info">
+              <div class="chat-user-name">${username}</div>
+              <div class="chat-user-preview">No messages yet</div>
+            </div>
+          `;
+          item.addEventListener('click', () => selectChatUser(item, username, pfp));
+          list.appendChild(item);
+        });
+      });
+
+    function selectChatUser(item, username, pfp) {
+      document.querySelectorAll('.chat-user-item').forEach(i => i.classList.remove('active'));
+      item.classList.add('active');
+
+      document.getElementById('chat-empty').style.display   = 'none';
+      const convo = document.getElementById('chat-convo');
+      convo.style.display = 'flex';
+
+      document.getElementById('chat-header-pfp').src        = pfp;
+      document.getElementById('chat-header-name').textContent = username;
+      document.getElementById('chat-their-pfp').src         = pfp;
+      document.getElementById('chat-their-pfp2').src        = pfp;
+    }
+
+    function copyHash() {
+      navigator.clipboard.writeText(USER_HASH).then(() => {
+        const btn = document.getElementById('copy-btn');
+        btn.textContent = 'Copied!';
+        setTimeout(() => btn.textContent = 'Copy', 2000);
+      });
+    }
+
+    function applyMusicPreset() {
+      const selected = document.querySelector('input[name="music-preset"]:checked');
+      if (!selected) return;
+      localStorage.setItem('bgMusic', selected.value);
+      window.location.href = window.location.origin + window.location.pathname + '#' + encodeURIComponent(FULL_PATH.replace('file://', ''));
+      location.reload();
+    }
+
+    // MUSIC — preset system
+    const MUSIC_DEFAULT = './1.mp3';
+
+    (function initMusic() {
+      const saved = localStorage.getItem('bgMusic') ?? MUSIC_DEFAULT;
+      document.querySelectorAll('input[name="music-preset"]').forEach(r => {
+        if (r.value === saved) r.checked = true;
+      });
+      if (saved === 'none') return;
+
+      const audio = new Audio(saved);
+      audio.loop = true;
+      audio.volume = 0.5;
+      window._bgAudio = audio;
+
+      // Start on enter-btn click (button is injected dynamically by auth.js)
+      document.addEventListener('click', function onEnter(e) {
+        if (e.target && e.target.id === 'enter-btn') {
+          audio.play().catch(() => {});
+          document.removeEventListener('click', onEnter);
+        }
+      });
+    })();
+  </script>
+
+</body>
+</html>

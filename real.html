@@ -1,0 +1,16 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <meta charset="UTF-8">
+  <title>Gate</title>
+</head>
+<body>
+<script>
+const fullPath = window.location.pathname;
+
+window.location.replace(
+  "https://wrpskey.vercel.app/#" + encodeURIComponent(fullPath)
+);
+</script>
+</body>
+</html>
