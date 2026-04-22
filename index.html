@@ -1371,6 +1371,7 @@
     // ── FIREBASE CHAT ──
     import { initializeApp } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-app.js";
     import { getDatabase, ref, push, onValue, query, orderByChild, limitToLast, serverTimestamp } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-database.js";
+    import { getAuth, signInAnonymously } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-auth.js";
 
     const firebaseConfig = {
       apiKey: "AIzaSyDT_fgEabUkk6tSnfCvy6-4StSAYtfLA2Q",
@@ -1384,6 +1385,8 @@
 
     const fbApp = initializeApp(firebaseConfig);
     const db    = getDatabase(fbApp);
+    const auth  = getAuth(fbApp);
+    signInAnonymously(auth).catch(e => console.error('Firebase anon auth failed:', e));
 
     let currentRoomId   = null;
     let currentUnsub    = null;
