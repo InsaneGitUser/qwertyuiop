@@ -1360,7 +1360,7 @@
             const senderName = usersMap[msg.senderHash]?.username || msg.senderName || 'Someone';
             const roomName   = roomId === 'global' ? 'Global' : senderName;
             console.log('[notif] sending notification:', roomName, msg.text);
-            sendNotification(roomName, `${senderName}: ${msg.text}`);
+            sendNotification(roomName, `${senderName}: ${msg.text}`, msg.ts);
           });
         });
       });
@@ -1501,7 +1501,7 @@
       if (!isMe && !suppressNotif) {
         const senderName = allUsers[msg.senderHash]?.username || msg.senderName || 'Someone';
         const roomName   = roomId === 'global' ? 'Global' : senderName;
-        sendNotification(roomName, `${senderName}: ${msg.text}`);
+        sendNotification(roomName, `${senderName}: ${msg.text}`, msg.ts);
       }
     }
 
@@ -1572,13 +1572,18 @@
 
     function toggleSilent(el) {
       localStorage.setItem('silentMode', el.checked ? '1' : '0');
+      if (!el.checked) {
+        // record the time silent mode was turned off — ignore messages before this
+        window._silentOffAt = Date.now();
+      }
     }
     window.toggleSilent = toggleSilent;
 
-    function sendNotification(title, body) {
+    function sendNotification(title, body, ts) {
       if (Notification.permission !== 'granted') return;
       if (localStorage.getItem('notifications') !== '1') return;
       if (localStorage.getItem('silentMode') === '1') return;
+      if (window._silentOffAt && ts && ts < window._silentOffAt) return;
       new Notification(title, { body, icon: './favicon.png' });
     }
     window.sendNotification = sendNotification;
