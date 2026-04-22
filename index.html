@@ -848,7 +848,7 @@
           <div class="settings-row">
             <div>
               <div class="row-label">Silent mode</div>
-              <div class="row-sub">Receive notifications without sound</div>
+              <div class="row-sub">Temporarily pause all notifications</div>
             </div>
             <label class="toggle">
               <input type="checkbox" id="silent-toggle" onchange="toggleSilent(this)" />
@@ -1578,8 +1578,8 @@
     function sendNotification(title, body) {
       if (Notification.permission !== 'granted') return;
       if (localStorage.getItem('notifications') !== '1') return;
-      const silent = localStorage.getItem('silentMode') === '1';
-      new Notification(title, { body, icon: './favicon.png', silent });
+      if (localStorage.getItem('silentMode') === '1') return;
+      new Notification(title, { body, icon: './favicon.png' });
     }
     window.sendNotification = sendNotification;
 
