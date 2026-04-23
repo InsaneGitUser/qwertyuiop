@@ -2,11 +2,15 @@
 <users>
   <user>
     <hash>a1b2c3d4e5f6</hash>
+    <username>Dev</username>
+  </user>
+  <user>
+    <hash>9f5dbfa17fe5edafb187d2e0ad1934c0ebe062dd</hash>
     <username>Jeekson</username>
     <pfp>pfps/jeekson.jpg</pfp>
   </user>
   <user>
-    <hash>hfasd</hash>
+    <hash>8aea3c7294586d9b5cc2f83be3fc8e196bd9044e</hash>
     <username>woem</username>
     <pfp>pfps/woem.jpg</pfp>
   </user>
