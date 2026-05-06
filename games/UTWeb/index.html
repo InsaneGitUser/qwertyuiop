@@ -863,4 +863,9 @@
 	<!-- Load Main Game Runner JS File -->
     <script async type="text/javascript" src="runner.js"></script>
   </body>
+	<script>
+  if ('serviceWorker' in navigator) {
+    navigator.serviceWorker.register('./sw.js');
+  }
+</script>
 </html>
