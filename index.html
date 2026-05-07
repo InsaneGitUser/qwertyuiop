@@ -631,39 +631,57 @@
     }
     .home-btn:hover .home-btn-arrow { color: #f5c400; }
 
-    /* GAMES GRID */
-    .games-grid {
-      display: grid;
-      grid-template-columns: repeat(auto-fill, minmax(220px, 1fr));
-      gap: 16px;
-      margin-top: 28px;
-    }
-
-    .game-card-link { text-decoration: none; color: inherit; display: block; }
-
-    .game-card {
-      background: var(--bg2);
-      border: 1px solid var(--border);
-      border-radius: 14px;
-      overflow: hidden;
+    /* ── CARTRIDGE UPLOADER ── */
+    .cartridge-zone {
+      margin-top: 32px;
+      border: 2px dashed var(--border);
+      border-radius: 16px;
+      padding: 60px 32px;
+      text-align: center;
       cursor: pointer;
-      transition: border-color 0.2s, transform 0.15s;
+      transition: border-color 0.2s, background 0.2s;
+      position: relative;
+    }
+    .cartridge-zone:hover,
+    .cartridge-zone.drag-over {
+      border-color: #f5c400;
+      background: color-mix(in srgb, #f5c400 4%, transparent);
+    }
+    .cartridge-zone input[type="file"] {
+      position: absolute;
+      inset: 0;
+      opacity: 0;
+      cursor: pointer;
+      width: 100%;
       height: 100%;
     }
-    .game-card:hover { border-color: #f5c400; transform: translateY(-3px); }
-
-    .game-card .thumb {
-      width: 100%;
-      aspect-ratio: 16/9;
-      background: var(--bg3);
-      overflow: hidden;
-      border-bottom: 1px solid var(--border);
+    .cartridge-icon {
+      font-size: 48px;
+      margin-bottom: 16px;
+      display: block;
+      filter: grayscale(0.3);
     }
-    .game-card .thumb img { width: 100%; height: 100%; object-fit: cover; display: block; }
+    .cartridge-zone .cz-title {
+      font-size: 16px;
+      font-weight: 700;
+      color: var(--text);
+      margin-bottom: 6px;
+    }
+    .cartridge-zone .cz-sub {
+      font-size: 13px;
+      color: var(--text3);
+    }
+    .cartridge-status {
+      margin-top: 20px;
+      font-size: 13px;
+      color: var(--text3);
+      min-height: 20px;
+      text-align: center;
+    }
+    .cartridge-status.loading { color: #f5c400; }
+    .cartridge-status.error   { color: #f54040; }
+    .cartridge-status.success { color: #40c878; }
 
-    .game-card .info { padding: 12px 14px; }
-    .game-card .info .title { font-size: 14px; font-weight: 600; color: var(--text); margin-bottom: 4px; }
-    .game-card .info .desc  { font-size: 12px; color: var(--text3); line-height: 1.5; }
     /* MUSIC PLAYER */
     .msg-sender { font-size: 11px; color: var(--text3); margin-bottom: 2px; }
 
@@ -807,8 +825,16 @@
     <!-- GAMES -->
     <div class="page" id="page-games">
       <div class="page-title">Games</div>
-      <div class="page-sub">Pick something to play</div>
-      <div class="games-grid" id="games-grid"></div>
+      <div class="page-sub">Insert a cartridge to play</div>
+
+      <!-- Cartridge drop zone -->
+      <div class="cartridge-zone" id="cartridge-zone">
+        <input type="file" id="cartridge-input" accept=".cartridge" />
+        <span class="cartridge-icon">🕹️</span>
+        <div class="cz-title">Drop a .cartridge file here</div>
+        <div class="cz-sub">or click to browse</div>
+      </div>
+      <div class="cartridge-status" id="cartridge-status"></div>
     </div>
 
     <!-- SETTINGS -->
@@ -1248,34 +1274,171 @@
       document.getElementById('theme-toggle').checked = true;
     }
 
-    // LOAD GAMES
-    fetch(ROOT_URL + 'games.xml')
-      .then(r => r.text())
-      .then(xml => {
-        const doc  = new DOMParser().parseFromString(xml, 'text/xml');
-        const grid = document.getElementById('games-grid');
+    // =====================
+    // CARTRIDGE LOADER (Service Worker edition)
+    // =====================
 
-        doc.querySelectorAll('game').forEach(g => {
-          const title = g.querySelector('title').textContent.trim();
-          const desc  = g.querySelector('desc').textContent.trim();
-          const img   = ROOT_URL + g.querySelector('img').textContent.trim();
-          const url   = g.querySelector('url').textContent.trim();
+    const cartridgeInput  = document.getElementById('cartridge-input');
+    const cartridgeZone   = document.getElementById('cartridge-zone');
+    const cartridgeStatus = document.getElementById('cartridge-status');
 
-          const card = document.createElement('a');
-          card.href      = url;
-          card.className = 'game-card-link';
-          card.innerHTML = `
-            <div class="game-card">
-              <div class="thumb"><img src="${img}" alt="${title}" /></div>
-              <div class="info">
-                <div class="title">${title}</div>
-                <div class="desc">${desc}</div>
-              </div>
-            </div>
-          `;
-          grid.appendChild(card);
+    function setStatus(msg, type = '') {
+      cartridgeStatus.textContent = msg;
+      cartridgeStatus.className = 'cartridge-status' + (type ? ' ' + type : '');
+    }
+
+    // Load JSZip from CDN
+    const jszipReady = new Promise((resolve, reject) => {
+      const s = document.createElement('script');
+      s.src = 'https://cdnjs.cloudflare.com/ajax/libs/jszip/3.10.1/jszip.min.js';
+      s.onload = resolve;
+      s.onerror = () => reject(new Error('Failed to load JSZip'));
+      document.head.appendChild(s);
+    });
+
+    // Register the service worker once
+    let swRegistration = null;
+    let swReady = null;
+
+    async function ensureSW() {
+      if (swReady) return swReady;
+      swReady = (async () => {
+        if (!('serviceWorker' in navigator)) throw new Error('Service Workers not supported');
+        swRegistration = await navigator.serviceWorker.register('./cartridge-sw.js', { scope: '/' });
+        // Wait for it to be active
+        await new Promise(resolve => {
+          if (navigator.serviceWorker.controller) { resolve(); return; }
+          navigator.serviceWorker.addEventListener('controllerchange', resolve, { once: true });
+          // Fallback: if registration is already active but no controller yet
+          if (swRegistration.active) {
+            // Force claim
+            swRegistration.active.postMessage({ type: 'CLAIM' });
+            setTimeout(resolve, 300);
+          }
         });
+      })();
+      return swReady;
+    }
+
+    // Send files to SW and wait for acknowledgement
+    function sendToSW(files) {
+      return new Promise((resolve, reject) => {
+        const timeout = setTimeout(() => reject(new Error('SW did not acknowledge')), 5000);
+        navigator.serviceWorker.addEventListener('message', function handler(e) {
+          if (e.data?.type === 'CARTRIDGE_READY') {
+            clearTimeout(timeout);
+            navigator.serviceWorker.removeEventListener('message', handler);
+            resolve();
+          }
+        });
+        navigator.serviceWorker.controller.postMessage({ type: 'LOAD_CARTRIDGE', files });
       });
+    }
+
+    // Drag-over styling
+    cartridgeZone.addEventListener('dragover', e => {
+      e.preventDefault();
+      cartridgeZone.classList.add('drag-over');
+    });
+    cartridgeZone.addEventListener('dragleave', () => cartridgeZone.classList.remove('drag-over'));
+    cartridgeZone.addEventListener('drop', e => {
+      e.preventDefault();
+      cartridgeZone.classList.remove('drag-over');
+      const file = e.dataTransfer.files[0];
+      if (file) loadCartridge(file);
+    });
+
+    cartridgeInput.addEventListener('change', e => {
+      const file = e.target.files[0];
+      if (file) loadCartridge(file);
+      cartridgeInput.value = '';
+    });
+
+    function mimeFor(path) {
+      const ext = path.split('.').pop().toLowerCase();
+      const map = {
+        html: 'text/html', htm: 'text/html',
+        css:  'text/css',
+        js:   'application/javascript', mjs: 'application/javascript', cjs: 'application/javascript',
+        json: 'application/json',
+        png:  'image/png', jpg: 'image/jpeg', jpeg: 'image/jpeg',
+        gif:  'image/gif', webp: 'image/webp', svg: 'image/svg+xml',
+        ico:  'image/x-icon', bmp: 'image/bmp',
+        mp3:  'audio/mpeg', ogg: 'audio/ogg', wav: 'audio/wav', flac: 'audio/flac',
+        mp4:  'video/mp4', webm: 'video/webm',
+        woff: 'font/woff', woff2: 'font/woff2', ttf: 'font/ttf', otf: 'font/otf',
+        txt:  'text/plain', md: 'text/plain',
+        xml:  'application/xml',
+        wasm: 'application/wasm',
+        data: 'application/octet-stream',
+      };
+      return map[ext] || 'application/octet-stream';
+    }
+
+    async function loadCartridge(file) {
+      if (!file.name.endsWith('.cartridge')) {
+        setStatus('❌ Not a .cartridge file', 'error');
+        return;
+      }
+
+      setStatus('📦 Reading cartridge...', 'loading');
+
+      try {
+        await jszipReady;
+        const zip = await JSZip.loadAsync(file);
+
+        const entries = [];
+        zip.forEach((relativePath, zipEntry) => {
+          if (!zipEntry.dir) entries.push({ path: relativePath, entry: zipEntry });
+        });
+
+        if (entries.length === 0) {
+          setStatus('❌ Cartridge is empty', 'error');
+          return;
+        }
+
+        // Find index.html — prefer root, accept any depth
+        const indexEntry = entries.find(f => f.path === 'index.html')
+          ?? entries.find(f => f.path.toLowerCase() === 'index.html')
+          ?? entries.find(f => f.path.endsWith('/index.html'));
+
+        if (!indexEntry) {
+          setStatus('❌ No index.html found in cartridge', 'error');
+          return;
+        }
+
+        setStatus(`📂 Extracting ${entries.length} file(s)...`, 'loading');
+
+        // Extract all files as Uint8Array — SW serves them raw, no rewriting needed
+        const files = {};
+        for (const { path, entry } of entries) {
+          const data = await entry.async('uint8array');
+          files[path] = { data, mime: mimeFor(path) };
+        }
+
+        setStatus('⚙️ Starting cartridge runtime...', 'loading');
+        await ensureSW();
+
+        await sendToSW(files);
+
+        // Navigate to /cartridge/index.html (or the found index path)
+        const cartridgePath = '/cartridge/' + indexEntry.path;
+        setStatus('🚀 Launching...', 'loading');
+
+        const newTab = window.open(cartridgePath, '_blank');
+        if (newTab) {
+          setStatus(`✅ Cartridge loaded! (${entries.length} files)`, 'success');
+        } else {
+          setStatus('', '');
+          cartridgeStatus.innerHTML =
+            `⚠️ Popup blocked. <a href="${cartridgePath}" target="_blank" style="color:#f5c400;">Click here to open</a>`;
+        }
+
+      } catch (err) {
+        console.error('Cartridge load error:', err);
+        setStatus('❌ ' + err.message, 'error');
+      }
+    }
 
     // LOAD USER + CHAT SIDEBAR
     fetch(ROOT_URL + 'users.xml')
