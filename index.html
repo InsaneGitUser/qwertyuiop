@@ -1380,7 +1380,14 @@
       return (b / (1024 * 1024)).toFixed(1) + ' MB';
     }
 
-    // Drag-over styling
+    // Pre-open the loading tab on the user gesture BEFORE the file picker appears,
+    // so window.open isn't blocked by the file chooser restriction.
+    let pendingLoadingTab = null;
+
+    cartridgeZone.addEventListener('click', () => {
+      pendingLoadingTab = openLoadingTab('cartridge');
+    });
+
     cartridgeZone.addEventListener('dragover', e => {
       e.preventDefault();
       cartridgeZone.classList.add('drag-over');
@@ -1389,6 +1396,8 @@
     cartridgeZone.addEventListener('drop', e => {
       e.preventDefault();
       cartridgeZone.classList.remove('drag-over');
+      // For drag-drop we didn't pre-open via click, so open now (still in gesture context)
+      pendingLoadingTab = openLoadingTab('cartridge');
       const file = e.dataTransfer.files[0];
       if (file) loadCartridge(file);
     });
@@ -1426,9 +1435,10 @@
         return;
       }
 
-      // Open the loading tab immediately (must be in direct user gesture context)
-      const loadingTab = openLoadingTab(file.name);
-      if (!loadingTab) {
+      // Use the tab that was pre-opened on the click gesture
+      const loadingTab = pendingLoadingTab;
+      pendingLoadingTab = null;
+      if (!loadingTab || loadingTab.closed) {
         setStatus('⚠️ Popup blocked — allow popups and try again', 'error');
         return;
       }
