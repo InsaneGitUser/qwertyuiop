@@ -1304,7 +1304,7 @@
       if (swReady) return swReady;
       swReady = (async () => {
         if (!('serviceWorker' in navigator)) throw new Error('Service Workers not supported');
-        swRegistration = await navigator.serviceWorker.register('./cartridge-sw.js', { scope: '/' });
+        swRegistration = await navigator.serviceWorker.register('./cartridge-sw.js', { scope: '/key/' });
         // Wait for it to be active
         await new Promise(resolve => {
           if (navigator.serviceWorker.controller) { resolve(); return; }
@@ -1421,8 +1421,8 @@
 
         await sendToSW(files);
 
-        // Navigate to /cartridge/index.html (or the found index path)
-        const cartridgePath = '/cartridge/' + indexEntry.path;
+        // Navigate to /key/cartridge/index.html (or the found index path)
+        const cartridgePath = '/key/cartridge/' + indexEntry.path;
         setStatus('🚀 Launching...', 'loading');
 
         const newTab = window.open(cartridgePath, '_blank');
