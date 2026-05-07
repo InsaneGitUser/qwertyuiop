@@ -1,90 +1,46 @@
 // cartridge-sw.js
-// Intercepts all requests to /key/cartridge/*
-// and serves files from the loaded cartridge.
-
 const CARTRIDGE_PREFIX = '/key/cartridge/';
 
-// File store: path -> { data, mime }
 let fileStore = {};
 
-self.addEventListener('install', () => {
-  self.skipWaiting();
-});
+self.addEventListener('install', () => self.skipWaiting());
+self.addEventListener('activate', e => e.waitUntil(self.clients.claim()));
 
-self.addEventListener('activate', event => {
-  event.waitUntil(self.clients.claim());
-});
-
-self.addEventListener('message', event => {
-  if (event.data?.type === 'LOAD_CARTRIDGE') {
-    fileStore = event.data.files || {};
-
-    // Acknowledge load
-    event.source?.postMessage({
-      type: 'CARTRIDGE_READY'
-    });
-  }
-
-  if (event.data?.type === 'UNLOAD_CARTRIDGE') {
+self.addEventListener('message', e => {
+  if (e.data?.type === 'LOAD_CARTRIDGE') {
+    fileStore = e.data.files;
+    e.source.postMessage({ type: 'CARTRIDGE_READY' });
+  } else if (e.data?.type === 'UNLOAD_CARTRIDGE') {
     fileStore = {};
   }
 });
 
-self.addEventListener('fetch', event => {
-  const url = new URL(event.request.url);
+self.addEventListener('fetch', e => {
+  const url = new URL(e.request.url);
+  if (!url.pathname.startsWith(CARTRIDGE_PREFIX)) return;
 
-  // Only intercept cartridge requests
-  if (!url.pathname.startsWith(CARTRIDGE_PREFIX)) {
-    return;
-  }
-
-  // Remove /key/cartridge/
   let filePath = url.pathname.slice(CARTRIDGE_PREFIX.length);
+  if (!filePath || filePath.endsWith('/')) filePath += 'index.html';
 
-  // Default document
-  if (!filePath || filePath.endsWith('/')) {
-    filePath += 'index.html';
-  }
-
-  event.respondWith(serveFile(filePath));
+  e.respondWith(serveFile(filePath));
 });
 
 async function serveFile(filePath) {
-  // Exact match
-  let entry = fileStore[filePath];
-
-  // Case-insensitive fallback
-  if (!entry) {
-    const match = Object.keys(fileStore).find(
-      k => k.toLowerCase() === filePath.toLowerCase()
-    );
-
-    if (match) {
-      entry = fileStore[match];
-    }
-  }
-
-  // SPA fallback
-  if (!entry && filePath !== 'index.html') {
-    entry = fileStore['index.html'];
-  }
+  const entry = fileStore[filePath]
+    ?? fileStore[Object.keys(fileStore).find(k => k.toLowerCase() === filePath.toLowerCase())]
+    ?? (filePath === 'index.html' ? null : fileStore['index.html']);
 
   if (!entry) {
-    return new Response(
-      `Not found in cartridge: ${filePath}`,
-      {
-        status: 404,
-        headers: {
-          'Content-Type': 'text/plain'
-        }
-      }
-    );
+    return new Response(`Not found in cartridge: ${filePath}`, {
+      status: 404,
+      headers: { 'Content-Type': 'text/plain' }
+    });
   }
 
   return new Response(entry.data, {
     status: 200,
     headers: {
-      'Content-Type': entry.mime || 'application/octet-stream',
+      'Content-Type': entry.mime,
       'Cross-Origin-Embedder-Policy': 'require-corp',
       'Cross-Origin-Opener-Policy': 'same-origin',
     }
