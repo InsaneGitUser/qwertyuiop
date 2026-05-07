@@ -1335,58 +1335,7 @@
       });
     }
 
-    // Write the about:blank loading screen into a new tab
-    function openLoadingTab(cartridgeName) {
-      const tab = window.open('about:blank', '_blank');
-      if (!tab) return null;
-      tab.document.open();
-      tab.document.write(`<!DOCTYPE html><html><head><meta charset="UTF-8"><title>Loading ${cartridgeName}...</title><style>
-        *{margin:0;padding:0;box-sizing:border-box}
-        body{background:#0a0a12;color:#e0e0ff;font-family:'Courier New',monospace;display:flex;flex-direction:column;align-items:center;justify-content:center;height:100vh;gap:24px}
-        h1{font-size:22px;color:#f5c400;letter-spacing:0.05em}
-        #status{font-size:13px;color:#9090bb;min-height:1.4em;text-align:center}
-        #current-file{font-size:11px;color:#444466;min-height:1.2em;text-align:center;max-width:500px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
-        #bar-wrap{width:400px;max-width:90vw;height:6px;background:#1a1a30;border-radius:999px;overflow:hidden}
-        #bar{height:100%;width:0%;background:#f5c400;border-radius:999px;transition:width 0.1s}
-        #bytes{font-size:11px;color:#444466}
-      </style></head><body>
-        <h1>🕹️ Loading Cartridge</h1>
-        <div id="status">Reading...</div>
-        <div id="bar-wrap"><div id="bar"></div></div>
-        <div id="bytes">0 B processed</div>
-        <div id="current-file"></div>
-      </body></html>`);
-      tab.document.close();
-      return tab;
-    }
 
-    function updateLoadingTab(tab, { status, file, bytesTotal, bytesProcessed, filesDone, filesTotal }) {
-      if (!tab || tab.closed) return;
-      try {
-        if (status)   tab.document.getElementById('status').textContent = status;
-        if (file)     tab.document.getElementById('current-file').textContent = file;
-        if (bytesTotal > 0) {
-          const pct = Math.round((bytesProcessed / bytesTotal) * 100);
-          tab.document.getElementById('bar').style.width = pct + '%';
-        }
-        tab.document.getElementById('bytes').textContent =
-          `${fmtBytes(bytesProcessed)} / ${fmtBytes(bytesTotal)}  (${filesDone}/${filesTotal} files)`;
-      } catch(e) { /* tab may have navigated */ }
-    }
-
-    function fmtBytes(b) {
-      if (b < 1024) return b + ' B';
-      if (b < 1024 * 1024) return (b / 1024).toFixed(1) + ' KB';
-      return (b / (1024 * 1024)).toFixed(1) + ' MB';
-    }
-
-    // Pre-open the loading tab on the user gesture BEFORE the file picker appears,
-    // so window.open isn't blocked by the file chooser restriction.
-    let pendingLoadingTab = null;
-
-    cartridgeZone.addEventListener('click', () => {
-      pendingLoadingTab = openLoadingTab('cartridge');
-    });
 
     cartridgeZone.addEventListener('dragover', e => {
       e.preventDefault();
@@ -1396,8 +1345,6 @@
     cartridgeZone.addEventListener('drop', e => {
       e.preventDefault();
       cartridgeZone.classList.remove('drag-over');
-      // For drag-drop we didn't pre-open via click, so open now (still in gesture context)
-      pendingLoadingTab = openLoadingTab('cartridge');
       const file = e.dataTransfer.files[0];
       if (file) loadCartridge(file);
     });
@@ -1435,14 +1382,6 @@
         return;
       }
 
-      // Use the tab that was pre-opened on the click gesture
-      const loadingTab = pendingLoadingTab;
-      pendingLoadingTab = null;
-      if (!loadingTab || loadingTab.closed) {
-        setStatus('⚠️ Popup blocked — allow popups and try again', 'error');
-        return;
-      }
-
       setStatus('📦 Reading cartridge...', 'loading');
 
       try {
@@ -1450,17 +1389,12 @@
         const zip = await JSZip.loadAsync(file);
 
         const entries = [];
-        let bytesTotal = 0;
         zip.forEach((relativePath, zipEntry) => {
-          if (!zipEntry.dir) {
-            entries.push({ path: relativePath, entry: zipEntry });
-            bytesTotal += zipEntry._data?.uncompressedSize ?? 0;
-          }
+          if (!zipEntry.dir) entries.push({ path: relativePath, entry: zipEntry });
         });
 
         if (entries.length === 0) {
           setStatus('❌ Cartridge is empty', 'error');
-          loadingTab.close();
           return;
         }
 
@@ -1470,44 +1404,36 @@
 
         if (!indexEntry) {
           setStatus('❌ No index.html found in cartridge', 'error');
-          loadingTab.close();
           return;
         }
 
         setStatus(`📂 Extracting ${entries.length} file(s)...`, 'loading');
-        updateLoadingTab(loadingTab, { status: 'Extracting files...', bytesTotal, bytesProcessed: 0, filesDone: 0, filesTotal: entries.length });
 
         const files = {};
-        let bytesProcessed = 0;
-        let filesDone = 0;
-
         for (const { path, entry } of entries) {
-          updateLoadingTab(loadingTab, { file: path, bytesTotal, bytesProcessed, filesDone, filesTotal: entries.length });
           const data = await entry.async('uint8array');
           files[path] = { data, mime: mimeFor(path) };
-          bytesProcessed += data.byteLength;
-          filesDone++;
-          updateLoadingTab(loadingTab, { bytesTotal, bytesProcessed, filesDone, filesTotal: entries.length });
         }
 
         setStatus('⚙️ Starting cartridge runtime...', 'loading');
-        updateLoadingTab(loadingTab, { status: 'Sending to runtime...', file: '', bytesTotal, bytesProcessed, filesDone, filesTotal: entries.length });
-
         await ensureSW();
         await sendToSW(files);
 
         const cartridgePath = '/key/cartridge/' + indexEntry.path;
         setStatus('🚀 Launching...', 'loading');
-        updateLoadingTab(loadingTab, { status: 'Launching...', bytesTotal, bytesProcessed, filesDone, filesTotal: entries.length });
 
-        // Navigate the loading tab to the cartridge instead of opening yet another tab
-        loadingTab.location.href = cartridgePath;
-        setStatus(`✅ Cartridge loaded! (${entries.length} files)`, 'success');
+        const newTab = window.open(cartridgePath, '_blank');
+        if (newTab) {
+          setStatus(`✅ Cartridge loaded! (${entries.length} files)`, 'success');
+        } else {
+          setStatus('', '');
+          cartridgeStatus.innerHTML =
+            `⚠️ Popup blocked. <a href="${cartridgePath}" target="_blank" style="color:#f5c400;">Click here to open</a>`;
+        }
 
       } catch (err) {
         console.error('Cartridge load error:', err);
         setStatus('❌ ' + err.message, 'error');
-        try { loadingTab.close(); } catch(e) {}
       }
     }
 
