@@ -682,6 +682,80 @@
     .cartridge-status.error   { color: #f54040; }
     .cartridge-status.success { color: #40c878; }
 
+    /* CARTRIDGE OVERLAY */
+    #cartridge-overlay {
+      display: none;
+      position: fixed;
+      inset: 0;
+      z-index: 10000;
+      background: rgba(0,0,0,0.85);
+      backdrop-filter: blur(8px);
+      align-items: center;
+      justify-content: center;
+      flex-direction: column;
+      gap: 20px;
+    }
+    #cartridge-overlay.active { display: flex; }
+    .co-cartridge {
+      font-size: 72px;
+      animation: cartInsert 0.4s cubic-bezier(0.22,1,0.36,1);
+    }
+    @keyframes cartInsert {
+      0%   { transform: translateY(-40px) scale(0.8); opacity: 0; }
+      100% { transform: translateY(0) scale(1); opacity: 1; }
+    }
+    .co-title {
+      font-size: 22px;
+      font-weight: 700;
+      color: #f5c400;
+      letter-spacing: 0.05em;
+      text-align: center;
+    }
+    .co-sub {
+      font-size: 13px;
+      color: #9090bb;
+      text-align: center;
+      max-width: 340px;
+      line-height: 1.6;
+    }
+    .co-bar-wrap {
+      width: 320px;
+      height: 4px;
+      background: #1a1a30;
+      border-radius: 999px;
+      overflow: hidden;
+    }
+    .co-bar {
+      height: 100%;
+      width: 0%;
+      background: #f5c400;
+      border-radius: 999px;
+      transition: width 0.15s;
+    }
+    .co-bar.indeterminate {
+      width: 40% !important;
+      animation: indeterminate 1.2s ease-in-out infinite;
+    }
+    @keyframes indeterminate {
+      0%   { transform: translateX(-100%); }
+      100% { transform: translateX(350%); }
+    }
+    .co-step {
+      font-size: 12px;
+      color: #444466;
+      text-align: center;
+    }
+    .co-popup-warn {
+      font-size: 12px;
+      color: #f5c400;
+      background: rgba(245,196,0,0.08);
+      border: 1px solid rgba(245,196,0,0.2);
+      border-radius: 8px;
+      padding: 8px 16px;
+      text-align: center;
+      max-width: 320px;
+    }
+
     /* MUSIC PLAYER */
     .msg-sender { font-size: 11px; color: var(--text3); margin-bottom: 2px; }
 
@@ -835,6 +909,18 @@
         <div class="cz-sub">or click to browse</div>
       </div>
       <div class="cartridge-status" id="cartridge-status"></div>
+    </div>
+
+    <!-- CARTRIDGE INSERTED OVERLAY -->
+    <div id="cartridge-overlay">
+      <div class="co-cartridge">🕹️</div>
+      <div class="co-title">CARTRIDGE INSERTED</div>
+      <div class="co-sub">Loading game assets — this may take a moment depending on the cartridge size.</div>
+      <div class="co-bar-wrap"><div class="co-bar" id="co-bar"></div></div>
+      <div class="co-step" id="co-step">Initialising...</div>
+      <div class="co-popup-warn" id="co-popup-warn" style="display:none">
+        ⚠️ Your browser blocked the popup — click <strong>Allow</strong> when prompted, or click the blocked popup icon in your address bar.
+      </div>
     </div>
 
     <!-- SETTINGS -->
@@ -1383,6 +1469,7 @@
       }
 
       setStatus('📦 Reading cartridge...', 'loading');
+      showCartridgeOverlay();
 
       try {
         await jszipReady;
@@ -1395,6 +1482,7 @@
 
         if (entries.length === 0) {
           setStatus('❌ Cartridge is empty', 'error');
+          hideCartridgeOverlay();
           return;
         }
 
@@ -1404,36 +1492,80 @@
 
         if (!indexEntry) {
           setStatus('❌ No index.html found in cartridge', 'error');
+          hideCartridgeOverlay();
           return;
         }
 
         setStatus(`📂 Extracting ${entries.length} file(s)...`, 'loading');
 
         const files = {};
-        for (const { path, entry } of entries) {
+        for (let i = 0; i < entries.length; i++) {
+          const { path, entry } = entries[i];
+          const pct = Math.round((i / entries.length) * 75);
+          setOverlayStep(`Extracting: ${path}`, pct);
           const data = await entry.async('uint8array');
           files[path] = { data, mime: mimeFor(path) };
         }
 
         setStatus('⚙️ Starting cartridge runtime...', 'loading');
+        setOverlayStep('Registering cartridge runtime...', 80);
         await ensureSW();
         await sendToSW(files);
 
         const cartridgePath = '/key/cartridge/' + indexEntry.path;
         setStatus('🚀 Launching...', 'loading');
+        setOverlayStep('Launching game...', 95);
 
         const newTab = window.open(cartridgePath, '_blank');
         if (newTab) {
           setStatus(`✅ Cartridge loaded! (${entries.length} files)`, 'success');
+          document.getElementById('co-popup-warn').style.display = 'none';
+          // Switch bar to indeterminate — waiting for the game to fully load
+          setOverlayStep('Game loading — you can switch to the new tab!', null);
+          // Mute bg music
+          if (window._bgAudio) window._bgAudio.volume = 0;
+          // Poll for tab close, then tear down overlay
+          const poll = setInterval(() => {
+            if (newTab.closed) {
+              clearInterval(poll);
+              hideCartridgeOverlay();
+            }
+          }, 500);
         } else {
+          // Popup was blocked
+          document.getElementById('co-popup-warn').style.display = '';
+          setOverlayStep(`Popup blocked — allow it, then <a href="${cartridgePath}" target="_blank" style="color:#f5c400;">click here</a> if needed`, null);
           setStatus('', '');
-          cartridgeStatus.innerHTML =
-            `⚠️ Popup blocked. <a href="${cartridgePath}" target="_blank" style="color:#f5c400;">Click here to open</a>`;
         }
 
       } catch (err) {
         console.error('Cartridge load error:', err);
         setStatus('❌ ' + err.message, 'error');
+        hideCartridgeOverlay();
+      }
+    }
+
+    function showCartridgeOverlay() {
+      document.getElementById('cartridge-overlay').classList.add('active');
+      setOverlayStep('Reading cartridge...', 0);
+      document.getElementById('co-popup-warn').style.display = 'none';
+    }
+
+    function hideCartridgeOverlay() {
+      document.getElementById('cartridge-overlay').classList.remove('active');
+      document.getElementById('co-bar').classList.remove('indeterminate');
+      // Restore bg music
+      if (window._bgAudio) window._bgAudio.volume = 0.5;
+    }
+
+    function setOverlayStep(msg, pct) {
+      document.getElementById('co-step').innerHTML = msg;
+      const bar = document.getElementById('co-bar');
+      if (pct === null) {
+        bar.classList.add('indeterminate');
+      } else {
+        bar.classList.remove('indeterminate');
+        bar.style.width = pct + '%';
       }
     }
 
