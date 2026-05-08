@@ -1,9 +1,7 @@
 // cartridge-sw.js
 const CARTRIDGE_PREFIX = '/key/cartridge/';
 
-// fileStore: path -> { data: Uint8Array, mime: string }
 let fileStore = {};
-// externalMap: fake path -> real external URL
 let externalMap = {};
 
 self.addEventListener('install', () => self.skipWaiting());
@@ -20,10 +18,6 @@ self.addEventListener('message', e => {
   }
 });
 
-// Parse the "special" file from the cartridge.
-// Format (one mapping per line):
-//   /fake/path = https://real.url/file
-// Blank lines and lines starting with # are ignored.
 function parseSpecialFile(files) {
   const map = {};
   const entry = files['special'] ?? files['special.txt'];
@@ -79,12 +73,9 @@ async function serveFile(filePath, originalRequest) {
     });
   }
 
+  // NOTE: No COOP/COEP headers — they break window.closed detection in the opener
   return new Response(entry.data, {
     status: 200,
-    headers: {
-      'Content-Type': entry.mime,
-      'Cross-Origin-Embedder-Policy': 'require-corp',
-      'Cross-Origin-Opener-Policy': 'same-origin',
-    }
+    headers: { 'Content-Type': entry.mime }
   });
 }
