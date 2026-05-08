@@ -682,7 +682,7 @@
     .cartridge-status.error   { color: #f54040; }
     .cartridge-status.success { color: #40c878; }
 
-    /* CARTRIDGE OVERLAY */
+    /* CARTRIDGE LOADING OVERLAY (shown during extraction) */
     #cartridge-overlay {
       display: none;
       position: fixed;
@@ -745,15 +745,36 @@
       color: #444466;
       text-align: center;
     }
-    .co-popup-warn {
-      font-size: 12px;
-      color: #f5c400;
-      background: rgba(245,196,0,0.08);
-      border: 1px solid rgba(245,196,0,0.2);
-      border-radius: 8px;
-      padding: 8px 16px;
-      text-align: center;
-      max-width: 320px;
+
+    /* CARTRIDGE IFRAME (fullscreen, shown when game is running) */
+    #cartridge-frame-wrap {
+      display: none;
+      position: fixed;
+      inset: 0;
+      z-index: 9998;
+      background: #000;
+    }
+    #cartridge-frame-wrap.active { display: block; }
+    #cartridge-frame {
+      width: 100%;
+      height: 100%;
+      border: none;
+    }
+    #cartridge-exit-hint {
+      position: fixed;
+      bottom: 18px;
+      right: 22px;
+      z-index: 9999;
+      background: rgba(0,0,0,0.65);
+      color: #9090bb;
+      font-size: 11px;
+      font-family: 'Courier New', monospace;
+      padding: 6px 12px;
+      border-radius: 6px;
+      border: 1px solid #2a2a44;
+      pointer-events: none;
+      opacity: 1;
+      transition: opacity 0.5s;
     }
 
     /* MUSIC PLAYER */
@@ -911,18 +932,20 @@
       <div class="cartridge-status" id="cartridge-status"></div>
     </div>
 
-    <!-- CARTRIDGE INSERTED OVERLAY -->
+    <!-- CARTRIDGE LOADING OVERLAY -->
     <div id="cartridge-overlay">
       <div class="co-cartridge">🕹️</div>
       <div class="co-title">CARTRIDGE INSERTED</div>
-      <div class="co-sub">Loading game assets — this may take a moment depending on the cartridge size.</div>
+      <div class="co-sub">Loading game assets — this may take a moment.</div>
       <div class="co-bar-wrap"><div class="co-bar" id="co-bar"></div></div>
       <div class="co-step" id="co-step">Initialising...</div>
-      <div class="co-popup-warn" id="co-popup-warn" style="display:none">
-        ⚠️ Your browser blocked the popup — click <strong>Allow</strong> when prompted, or click the blocked popup icon in your address bar.
-      </div>
-
     </div>
+
+    <!-- CARTRIDGE IFRAME -->
+    <div id="cartridge-frame-wrap">
+      <iframe id="cartridge-frame" allowfullscreen allow="autoplay; gamepad; pointer-lock"></iframe>
+    </div>
+    <div id="cartridge-exit-hint" style="display:none">Press Ctrl+X to exit game</div>
 
     <!-- SETTINGS -->
     <div class="page" id="page-settings">
@@ -1517,31 +1540,19 @@
         setStatus('🚀 Launching...', 'loading');
         setOverlayStep('Launching game...', 95);
 
-        const newTab = window.open(cartridgePath, '_blank');
-        if (newTab) {
-          setStatus(`✅ Cartridge loaded! (${entries.length} files)`, 'success');
-          document.getElementById('co-popup-warn').style.display = 'none';
-          // Switch bar to indeterminate — waiting for the game to fully load
-          setOverlayStep('Game loading — you can switch to the new tab!', null);
-          // Mute bg music
+        // Load game into fullscreen iframe
+        const frame = document.getElementById('cartridge-frame');
+        frame.src = cartridgePath;
+        frame.onload = () => {
+          hideCartridgeOverlay();
+          document.getElementById('cartridge-frame-wrap').classList.add('active');
+          const hint = document.getElementById('cartridge-exit-hint');
+          hint.style.display = '';
+          hint.style.opacity = '1';
+          setTimeout(() => { hint.style.opacity = '0'; }, 4000);
           if (window._bgAudio) window._bgAudio.volume = 0;
-          // Poll for tab close, then tear down overlay
-          window._cartridgeTab = newTab;
-          if (window._cartridgePoll) clearInterval(window._cartridgePoll);
-          window._cartridgePoll = setInterval(() => {
-            if (window._cartridgeTab && window._cartridgeTab.closed) {
-              clearInterval(window._cartridgePoll);
-              window._cartridgePoll = null;
-              window._cartridgeTab = null;
-              hideCartridgeOverlay();
-            }
-          }, 500);
-        } else {
-          // Popup was blocked
-          document.getElementById('co-popup-warn').style.display = '';
-          setOverlayStep(`Popup blocked — allow it, then <a href="${cartridgePath}" target="_blank" style="color:#f5c400;">click here</a> if needed`, null);
-          setStatus('', '');
-        }
+          setStatus('✅ Cartridge running — press Ctrl+X to exit', 'success');
+        };
 
       } catch (err) {
         console.error('Cartridge load error:', err);
@@ -1553,16 +1564,34 @@
     function showCartridgeOverlay() {
       document.getElementById('cartridge-overlay').classList.add('active');
       setOverlayStep('Reading cartridge...', 0);
-      document.getElementById('co-popup-warn').style.display = 'none';
     }
 
-    window.hideCartridgeOverlay =
     function hideCartridgeOverlay() {
       document.getElementById('cartridge-overlay').classList.remove('active');
       document.getElementById('co-bar').classList.remove('indeterminate');
-      // Restore bg music
-      if (window._bgAudio) window._bgAudio.volume = 0.5;
     }
+
+    function exitCartridge() {
+      const frame = document.getElementById('cartridge-frame');
+      const wrap  = document.getElementById('cartridge-frame-wrap');
+      const hint  = document.getElementById('cartridge-exit-hint');
+      frame.src   = 'about:blank';
+      wrap.classList.remove('active');
+      hint.style.display = 'none';
+      if (window._bgAudio) window._bgAudio.volume = 0.5;
+      setStatus('', '');
+    }
+
+    // Ctrl+X exits the cartridge
+    document.addEventListener('keydown', e => {
+      if (e.ctrlKey && e.key === 'x') {
+        const wrap = document.getElementById('cartridge-frame-wrap');
+        if (wrap.classList.contains('active')) {
+          e.preventDefault();
+          exitCartridge();
+        }
+      }
+    });
 
     function setOverlayStep(msg, pct) {
       document.getElementById('co-step').innerHTML = msg;
