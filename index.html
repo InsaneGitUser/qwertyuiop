@@ -921,6 +921,7 @@
       <div class="co-popup-warn" id="co-popup-warn" style="display:none">
         ⚠️ Your browser blocked the popup — click <strong>Allow</strong> when prompted, or click the blocked popup icon in your address bar.
       </div>
+
     </div>
 
     <!-- SETTINGS -->
@@ -1525,9 +1526,13 @@
           // Mute bg music
           if (window._bgAudio) window._bgAudio.volume = 0;
           // Poll for tab close, then tear down overlay
-          const poll = setInterval(() => {
-            if (newTab.closed) {
-              clearInterval(poll);
+          window._cartridgeTab = newTab;
+          if (window._cartridgePoll) clearInterval(window._cartridgePoll);
+          window._cartridgePoll = setInterval(() => {
+            if (window._cartridgeTab && window._cartridgeTab.closed) {
+              clearInterval(window._cartridgePoll);
+              window._cartridgePoll = null;
+              window._cartridgeTab = null;
               hideCartridgeOverlay();
             }
           }, 500);
@@ -1551,6 +1556,7 @@
       document.getElementById('co-popup-warn').style.display = 'none';
     }
 
+    window.hideCartridgeOverlay =
     function hideCartridgeOverlay() {
       document.getElementById('cartridge-overlay').classList.remove('active');
       document.getElementById('co-bar').classList.remove('indeterminate');
